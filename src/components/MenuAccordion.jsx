@@ -1,147 +1,96 @@
-// src/components/MenuAccordion.jsx
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+// CAF-2: Menú interactivo organizado por categorías (Dev 2)
+import React, { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import './MenuAccordion.css';
-
-// ============================================================================
-// 1. CONFIGURACIÓN DE SUPABASE
-// ============================================================================
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
   import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
-// ============================================================================
-// 2. FUNCIONES AUXILIARES
-// ============================================================================
-
 const obtenerProductos = async () => {
   const { data, error } = await supabase
     .from('productos')
-    .select('id, nombre, descripcion, precio, stock, imagen_url, categoria_id, categorias(nombre)')
+    .select('id, nombre, descripcion, precio, imagen_url, categoria_id, categorias(nombre)')
     .eq('activo', true)
     .gt('stock', 0);
-  if (error) throw new Error(`Error al cargar productos: ${error.message}`);
+
+  if (error) throw new Error(error.message);
   return data || [];
 };
 
-const agruparPorCategoria = (productos) => {
-  return productos.reduce((acc, prod) => {
-    const nombreCategoria = prod.categorias?.nombre || 'Otros';
-    if (!acc[nombreCategoria]) acc[nombreCategoria] = [];
-    acc[nombreCategoria].push(prod);
-    return acc;
+const agruparPorCategoria = (productos) =>
+  productos.reduce((grupos, producto) => {
+    const categoria = producto.categorias?.nombre || 'Otros';
+    if (!grupos[categoria]) grupos[categoria] = [];
+    grupos[categoria].push(producto);
+    return grupos;
   }, {});
-};
 
-// ============================================================================
-// 3. SUBCOMPONENTE ProductItem (memoizado)
-// ============================================================================
-
-const ProductItem = React.memo(({ item, agregarAlCarrito }) => {
-  // Imagen con tamaño reducido
-  const imgUrl = item.imagen_url
-    ? `${item.imagen_url}?width=120&height=120&fit=crop`
+function ProductItem({ producto, agregarAlCarrito }) {
+  const imagen = producto.imagen_url
+    ? producto.imagen_url + '?width=120&height=120&fit=crop'
     : '/default-product.png';
 
   return (
     <li className="menu-item">
       <img
-        src={imgUrl}
-        alt={item.nombre}
+        src={imagen}
+        alt={producto.nombre}
         className="menu-img"
         loading="lazy"
         decoding="async"
         style={{ width: '80px', height: '80px', objectFit: 'cover' }}
       />
       <div>
-        <strong>{item.nombre}</strong>
-        <p>Precio: Bs. {Number(item.precio || 0).toFixed(2)}</p>
+        <strong>{producto.nombre}</strong>
+        {producto.descripcion && <p>{producto.descripcion}</p>}
+        <p>Precio: Bs. {Number(producto.precio || 0).toFixed(2)}</p>
         <button
           className="btn-pedir"
-          onClick={() =>
-            agregarAlCarrito({
-              nombre: item.nombre,
-              precio: Number(item.precio || 0),
-              id: item.id,
-            })
-          }
+          type="button"
+          onClick={() => agregarAlCarrito?.({
+            id: producto.id,
+            nombre: producto.nombre,
+            precio: Number(producto.precio || 0),
+          })}
+          aria-label={'Pedir ' + producto.nombre}
         >
           Pedir
         </button>
       </div>
     </li>
   );
-});
+}
 
-// ============================================================================
-// 4. COMPONENTE DE LISTA CON CARGA POR LOTES (sin librerías externas)
-// ============================================================================
+function ListaProductos({ productos, agregarAlCarrito, tamanoLote = 20 }) {
+  const [cantidadVisible, setCantidadVisible] = useState(tamanoLote);
 
-const LazyList = ({ items, agregarAlCarrito, batchSize = 20 }) => {
-  const [visibleCount, setVisibleCount] = useState(batchSize);
-  const containerRef = useRef(null);
-  const observerRef = useRef(null);
-
-  // Cargar más items cuando se hace scroll al final
-  const loadMore = useCallback(() => {
-    setVisibleCount((prev) => Math.min(prev + batchSize, items.length));
-  }, [items.length, batchSize]);
-
-  // Intersection Observer para detectar el final de la lista
   useEffect(() => {
-    if (!containerRef.current) return;
+    setCantidadVisible(tamanoLote);
+  }, [productos, tamanoLote]);
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && visibleCount < items.length) {
-          loadMore();
-        }
-      },
-      { threshold: 0.1, rootMargin: '20px' }
-    );
-
-    // Observar el último elemento de la lista
-    const lastItem = containerRef.current.lastElementChild;
-    if (lastItem) {
-      observer.observe(lastItem);
-    }
-
-    observerRef.current = observer;
-    return () => observer.disconnect();
-  }, [visibleCount, items.length, loadMore]);
-
-  // Resetear visibleCount cuando cambian los items (nueva categoría)
-  useEffect(() => {
-    setVisibleCount(batchSize);
-  }, [items, batchSize]);
-
-  const visibleItems = items.slice(0, visibleCount);
-  const hasMore = visibleCount < items.length;
+  const visibles = productos.slice(0, cantidadVisible);
+  const hayMas = cantidadVisible < productos.length;
 
   return (
-    <div ref={containerRef}>
+    <div>
       <ul className="menu-items" style={{ maxHeight: '500px', overflowY: 'auto' }}>
-        {visibleItems.map((item, index) => (
-          <ProductItem key={index} item={item} agregarAlCarrito={agregarAlCarrito} />
+        {visibles.map((producto) => (
+          <ProductItem
+            key={producto.id}
+            producto={producto}
+            agregarAlCarrito={agregarAlCarrito}
+          />
         ))}
       </ul>
-      {hasMore && (
+      {hayMas && (
         <div style={{ textAlign: 'center', padding: '8px', color: '#666', fontSize: '0.9rem' }}>
-          ⚡ Mostrando {visibleCount} de {items.length} productos
-          <br />
+          <p role="status">Mostrando {visibles.length} de {productos.length} productos</p>
           <button
-            onClick={loadMore}
-            style={{
-              marginTop: '5px',
-              padding: '5px 15px',
-              background: '#27ae60',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-            }}
+            type="button"
+            onClick={() => setCantidadVisible((actual) => Math.min(actual + tamanoLote, productos.length))}
+            style={{ marginTop: '5px', padding: '5px 15px', background: '#27ae60', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
           >
             Cargar más
           </button>
@@ -149,59 +98,85 @@ const LazyList = ({ items, agregarAlCarrito, batchSize = 20 }) => {
       )}
     </div>
   );
-};
-
-// ============================================================================
-// 5. COMPONENTE PRINCIPAL
-// ============================================================================
+}
 
 export default function MenuAccordion({ agregarAlCarrito }) {
   const [productos, setProductos] = useState([]);
-  const [activeIndex, setActiveIndex] = useState(null);
-  const [error, setError] = useState(null);
+  const [categoriaActiva, setCategoriaActiva] = useState(null);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState('');
+  const [intento, setIntento] = useState(0);
 
   useEffect(() => {
+    let activo = true;
+
     const cargarProductos = async () => {
+      setCargando(true);
+      setError('');
       try {
-        const data = await obtenerProductos();
-        setProductos(data);
+        const datos = await obtenerProductos();
+        if (activo) setProductos(datos);
       } catch (err) {
-        setError('Error al cargar productos');
-        console.error(err);
+        if (activo) setError('No se pudo cargar el menú. Intenta nuevamente.');
+        console.error('Error al cargar productos:', err);
+      } finally {
+        if (activo) setCargando(false);
       }
     };
+
     cargarProductos();
-  }, []);
+    return () => {
+      activo = false;
+    };
+  }, [intento]);
 
   const productosPorCategoria = useMemo(
     () => agruparPorCategoria(productos),
     [productos]
   );
-
-  const toggleSection = useCallback((index) => {
-    setActiveIndex((prev) => (prev === index ? null : index));
-  }, []);
-
-  if (error) return <div className="error-message">{error}</div>;
+  const categorias = Object.entries(productosPorCategoria).sort(([a], [b]) => a.localeCompare(b, 'es'));
 
   return (
-    <section className="menu-accordion">
+    <section className="menu-accordion" aria-busy={cargando}>
       <h2 className="menu-title">Nuestro Menú</h2>
-      {Object.entries(productosPorCategoria).map(([categoria, items], i) => (
-        <div className="menu-section" key={i}>
-          <button className="menu-toggle" onClick={() => toggleSection(i)}>
-            {categoria} <span>{activeIndex === i ? '▲' : '▼'}</span>
-          </button>
-
-          {activeIndex === i && (
-            <LazyList
-              items={items}
-              agregarAlCarrito={agregarAlCarrito}
-              batchSize={20}
-            />
-          )}
+      {cargando && <p role="status">Cargando menú…</p>}
+      {!cargando && error && (
+        <div className="error-message" role="alert">
+          <p>{error}</p>
+          <button type="button" onClick={() => setIntento((actual) => actual + 1)}>Reintentar</button>
         </div>
-      ))}
+      )}
+      {!cargando && !error && productos.length === 0 && (
+        <p>No hay productos disponibles por el momento.</p>
+      )}
+
+      {!cargando && !error && categorias.map(([categoria, items], indice) => {
+        const abierto = categoriaActiva === categoria;
+        const botonId = 'menu-toggle-' + indice;
+        const panelId = 'menu-panel-' + indice;
+        return (
+          <div className="menu-section" key={categoria}>
+            <button
+              id={botonId}
+              className="menu-toggle"
+              type="button"
+              aria-expanded={abierto}
+              aria-controls={panelId}
+              onClick={() => setCategoriaActiva(abierto ? null : categoria)}
+            >
+              {categoria} <span aria-hidden="true">{abierto ? '▲' : '▼'}</span>
+            </button>
+            {abierto && (
+              <div id={panelId} role="region" aria-labelledby={botonId}>
+                <ListaProductos
+                  productos={items}
+                  agregarAlCarrito={agregarAlCarrito}
+                />
+              </div>
+            )}
+          </div>
+        );
+      })}
     </section>
   );
 }
