@@ -1,5 +1,5 @@
 // src/App.jsx
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Navigate, Routes, Route, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import Header from './components/Header';
@@ -16,6 +16,18 @@ import Carrito from './components/Carrito';
 import ReservaMesas from './components/ReservaMesas';
 import Login from './components/Login';
 import Registro from './components/Registro';
+import RutaProtegida from './components/RutaProtegida';
+import PanelUsuario from './components/PanelUsuario';
+import { supabase } from './lib/supabase';
+import { obtenerRol, rutaPorRol } from './auth/session';
+
+const normalizarSesion = (authSession) => authSession?.user
+  ? {
+      id: authSession.user.id,
+      email: authSession.user.email,
+      rol: obtenerRol(authSession.user),
+    }
+  : null;
 
 // ============================================================================
 // 1. CONSTANTES DE ESTILOS (Separación de Concerns)
@@ -114,15 +126,15 @@ function Home({ agregarAlCarrito }) {
  * Gestiona el estado global del carrito, la autenticación y el modal de login/registro.
  * Aplica SRP: cada función tiene una única responsabilidad.
  */
-function App() {
+function AppContent() {
+  const navigate = useNavigate();
   // ========== ESTADOS GLOBALES ==========
   const [carrito, setCarrito] = useState([]);
   const [carritoVisible, setCarritoVisible] = useState(false);
   const [mostrarModal, setMostrarModal] = useState(false);
   const [modoRegistro, setModoRegistro] = useState(false);
-  const [autenticado, setAutenticado] = useState(false);
-  const [usuarioActivo, setUsuarioActivo] = useState('');
-  const [rol, setRol] = useState(0);
+  const [sesion, setSesion] = useState(null);
+  const [verificandoSesion, setVerificandoSesion] = useState(true);
 
   // ========== FUNCIONES DEL CARRITO ==========
 
@@ -165,11 +177,23 @@ function App() {
    * @param {string} usuario - Nombre del usuario.
    * @param {number} tipo - Tipo de usuario (0: normal, 1: admin).
    */
-  const handleLogin = (usuario, tipo) => {
-    setAutenticado(true);
-    setUsuarioActivo(usuario);
-    setRol(tipo);
+  const handleLogin = (user) => {
+    const nuevaSesion = {
+      id: user.id,
+      email: user.email,
+      rol: obtenerRol(user),
+    };
+    setSesion(nuevaSesion);
     cerrarModal();
+    navigate(rutaPorRol(user));
+  };
+
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (!error) {
+      setSesion(null);
+      navigate('/');
+    }
   };
 
   // ========== CONTROL DEL MODAL ==========
@@ -191,22 +215,32 @@ function App() {
     setModoRegistro((prev) => !prev);
   };
 
-  // ========== EFECTOS (depuración) ==========
-
   useEffect(() => {
-    if (mostrarModal) {
-      console.log('Modal abierto');
-    } else {
-      console.log('Modal cerrado');
-    }
-  }, [mostrarModal]);
+    let activo = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (activo) {
+        setSesion(normalizarSesion(data.session));
+        setVerificandoSesion(false);
+      }
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_evento, authSession) => {
+      if (activo) setSesion(normalizarSesion(authSession));
+    });
+
+    return () => {
+      activo = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
 
   // ========== RENDERIZADO PRINCIPAL ==========
 
   return (
-    <BrowserRouter>
+    <>
       {/* Encabezado con el botón de Login */}
-      <Header onLoginClick={abrirLogin} />
+      <Header onLoginClick={abrirLogin} sesion={sesion} onLogout={handleLogout} />
 
       {/* Menú desplegable del carrito */}
       <Carrito
@@ -223,6 +257,23 @@ function App() {
           path="/"
           element={<Home agregarAlCarrito={agregarAlCarrito} />}
         />
+        <Route
+          path="/mi-cuenta"
+          element={
+            <RutaProtegida sesion={sesion}>
+              <PanelUsuario sesion={sesion} />
+            </RutaProtegida>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <RutaProtegida sesion={sesion} rolRequerido="admin">
+              <PanelUsuario sesion={sesion} administrador />
+            </RutaProtegida>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
         <Route
           path="/productos"
           element={
@@ -244,7 +295,7 @@ function App() {
       </Routes>
 
       {/* ===== MODAL DE LOGIN / REGISTRO (con Portal) ===== */}
-      {mostrarModal &&
+      {!verificandoSesion && mostrarModal &&
         createPortal(
           <div
             className="modal-overlay"
@@ -286,6 +337,14 @@ function App() {
           </div>,
           document.body
         )}
+    </>
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
     </BrowserRouter>
   );
 }

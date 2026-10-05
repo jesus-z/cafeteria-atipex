@@ -1,20 +1,7 @@
 // src/components/Registro.jsx
 import { useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabase';
 import './Registro.css';
-
-// ============================================================================
-// 1. CONFIGURACIÓN DE SUPABASE
-// ============================================================================
-
-/**
- * Cliente de Supabase inicializado con variables de entorno.
- * @type {import('@supabase/supabase-js').SupabaseClient}
- */
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
 
 // ============================================================================
 // 2. FUNCIONES AUXILIARES (lógica de negocio y utilidades)
@@ -45,8 +32,9 @@ const registrarUsuario = async (email, password) => {
   validarContrasena(password);
 
   const { data, error } = await supabase.auth.signUp({
-    email,
+    email: email.trim(),
     password,
+    options: { data: { role: 'cliente' } },
   });
 
   if (error) throw new Error(error.message || 'Error al registrar usuario.');
@@ -108,8 +96,9 @@ export default function Registro({ onRegistroExitoso }) {
         {mensaje && <p className="mensaje">{mensaje}</p>}
         <form onSubmit={manejarRegistro}>
           <input
-            type="text"
-            placeholder="Usuario"
+            type="email"
+            placeholder="Correo electrónico"
+            autoComplete="email"
             value={usuario}
             onChange={(e) => setUsuario(e.target.value)}
             required
@@ -117,6 +106,7 @@ export default function Registro({ onRegistroExitoso }) {
           <input
             type="password"
             placeholder="Contraseña"
+            autoComplete="new-password"
             value={contrasena}
             onChange={(e) => setContrasena(e.target.value)}
             required
