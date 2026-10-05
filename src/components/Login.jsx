@@ -1,11 +1,6 @@
 import { useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabase';
 import './Login.css';
-
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
 
 export default function Login({ onLoginSuccess }) {
   const [usuario, setUsuario] = useState('');
@@ -20,18 +15,13 @@ export default function Login({ onLoginSuccess }) {
     
     try {
       const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email: usuario,
+        email: usuario.trim(),
         password: contrasena
       });
 
       if (authError) throw authError;
 
-      localStorage.setItem('usuario', JSON.stringify({
-        email: data.user.email,
-        id: data.user.id
-      }));
-      
-      onLoginSuccess(data.user.email, 0);
+      onLoginSuccess(data.user);
     } catch (err) {
       setError(err.message || 'Error al iniciar sesión');
     } finally {
@@ -46,8 +36,9 @@ export default function Login({ onLoginSuccess }) {
         {error && <p className="error">{error}</p>}
         <form onSubmit={manejarLogin}>
           <input
-            type="text"
-            placeholder="Usuario"
+            type="email"
+            placeholder="Correo electrónico"
+            autoComplete="email"
             value={usuario}
             onChange={(e) => setUsuario(e.target.value)}
             required
@@ -55,6 +46,7 @@ export default function Login({ onLoginSuccess }) {
           <input
             type="password"
             placeholder="Contraseña"
+            autoComplete="current-password"
             value={contrasena}
             onChange={(e) => setContrasena(e.target.value)}
             required

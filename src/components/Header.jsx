@@ -30,7 +30,7 @@ const navLinks = [
  * @param {Object} props
  * @param {Function} props.onLoginClick - Callback que se ejecuta al hacer clic en el botón "Login".
  */
-export default function Header({ onLoginClick }) {
+export default function Header({ onLoginClick, sesion, onLogout }) {
   return (
     <header>
       {/* Logo de la cafetería */}
@@ -56,10 +56,16 @@ export default function Header({ onLoginClick }) {
         })}
       </nav>
 
-      {/* Botón de Login: dispara el callback recibido por props */}
-      <button className="btn-signing" onClick={onLoginClick}>
-        Login
-      </button>
+      {sesion ? (
+        <div className="session-actions">
+          <Link to={sesion.rol === 'admin' ? '/admin' : '/mi-cuenta'}>
+            {sesion.email}
+          </Link>
+          <button className="btn-signing" onClick={onLogout}>Cerrar sesión</button>
+        </div>
+      ) : (
+        <button className="btn-signing" onClick={onLoginClick}>Iniciar sesión</button>
+      )}
     </header>
   );
 }
